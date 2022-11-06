@@ -14,7 +14,7 @@ class Profile(db.Model):
     )
 
 
-class PersonSchema(ma.SQLAlchemySchema):
+class ProfileSchema(ma.SQLAlchemySchema):
     class Meta:
         model = Profile
         load_instance = True

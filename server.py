@@ -1,5 +1,6 @@
-from flask import render_template, jsonify, request
-from config import app
+from flask import render_template, request, abort
+from config import app, db
+from models import Profile, ProfileSchema
 
 
 @app.route("/")
@@ -12,55 +13,86 @@ def health_check():
     return "This route is healthy "
 
 
-@app.route("/colors/<palette>/")
-def colors(palette):
-    """Example endpoint returning a list of colors by palette
-    This is using docstrings for specifications.
+@app.route("/profile/all", methods=["GET"])
+def read_all():
+    profiles = Profile.query.order_by(Profile.first_name).all()
+
+    profile_schema = ProfileSchema(many=True)
+    return profile_schema.dump(profiles)
+
+
+@app.route("/profile/<profile_id>", methods=["GET"])
+def read_one(profile_id):
+    """Endpoint documentation
     ---
     parameters:
-      - name: palette
+      - name: profile_id
         in: path
-        type: string
-        enum: ['all', 'rgb', 'cmyk']
+        type: integer
         required: true
-        default: all
     definitions:
-      Palette:
+      Profile:
         type: object
         properties:
-          palette_name:
-            type: array
-            items:
-              $ref: '#/definitions/Color'
-      Color:
-        type: string
+          first_name:
+            type: string
+          last_name:
+            type: string
+          bio:
+            type: string
+          age:
+            type: integer
+            format: int32
     responses:
       200:
-        description: A list of colors (may be filtered by palette)
+        description: The profile that has been searched
         schema:
-          $ref: '#/definitions/Palette'
-        examples:
-          rgb: ['red', 'green', 'blue']
+          $ref: '#/definitions/Profile'
     """
-    all_colors = {
-        "cmyk": ["cyan", "magenta", "yellow", "black"],
-        "rgb": ["red", "green", "blue"],
-    }
-    if palette == "all":
-        result = all_colors
+    profile = Profile.query.filter(Profile.profile_id == profile_id).one_or_none()
+
+    if profile is not None:
+        profile_schema = ProfileSchema()
+        return profile_schema.dump(profile)
     else:
-        result = {palette: all_colors.get(palette)}
-
-    return jsonify(result)
+        abort(404, f"Profile not found for id: {profile_id}")
 
 
-@app.route("/profile", methods=["GET", "POST"])
+@app.route("/profile", methods=["POST"])
 def create_profile():
-    if request.method == "POST":
-        data = request.data
-        return data
-    if request.method == "GET":
-        return None
+    profile = request.get_json()
+    print(profile)
+    first_name = profile["first_name"]
+    last_name = profile["last_name"]
+
+    existing_profile = (
+        Profile.query.filter(Profile.last_name == last_name)
+        .filter(Profile.first_name == first_name)
+        .one_or_none()
+    )
+
+    if existing_profile is None:
+        schema = ProfileSchema()
+        new_profile = schema.load(profile, session=db.session)
+
+        db.session.add(new_profile)
+        db.session.commit()
+
+        return schema.dump(new_profile), 201
+    else:
+        abort(409, f"Profile {first_name} {last_name} exists already")
+
+
+@app.route("/profile/<profile_id>", methods=["DELETE"])
+def delete_one(profile_id):
+    profile = Profile.query.filter(Profile.profile_id == profile_id).one_or_none()
+
+    if profile is not None:
+        db.session.delete(profile)
+        db.session.commit()
+        return "Profile successfuly deleted", 200
+    else:
+        abort(204, f"Profile with id {profile_id} cannot be deleted")
 
 
 if __name__ == "__main__":
